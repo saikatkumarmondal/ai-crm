@@ -23,6 +23,40 @@ enum OrganizationStatus {
   TRIAL
 }
 
+enum CustomerStatus {
+  LEAD
+  ACTIVE
+  INACTIVE
+  CHURNED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  CONVERTED
+}
+
+enum LeadSource {
+  WEBSITE
+  REFERRAL
+  SOCIAL_MEDIA
+  EMAIL_CAMPAIGN
+  COLD_CALL
+  EVENT
+  OTHER
+}
+
+enum DealStage {
+  QUALIFICATION
+  NEEDS_ANALYSIS
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
 model Organization {
   id        String             @id @default(cuid())
   name      String
@@ -31,7 +65,10 @@ model Organization {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
-  users User[]
+  users     User[]
+  customers Customer[]
+  leads     Lead[]
+  deals     Deal[]
 
   @@map("organizations")
 }
@@ -50,7 +87,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
+  refreshTokens    RefreshToken[]
+  createdCustomers Customer[]
+  createdLeads     Lead[]         @relation("LeadCreatedBy")
+  assignedLeads    Lead[]         @relation("LeadAssignedTo")
+  createdDeals     Deal[]         @relation("DealCreatedBy")
+  ownedDeals       Deal[]         @relation("DealOwner")
 
   @@index([organizationId])
   @@map("users")
@@ -67,4 +109,99 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+model Customer {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  fullName    String
+  email       String?
+  phone       String?
+  companyName String?
+  status      CustomerStatus @default(LEAD)
+  notes       String?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  convertedFromLead Lead?
+  deals             Deal[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("customers")
+}
+
+model Lead {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation("LeadCreatedBy", fields: [createdById], references: [id])
+
+  assignedToId String?
+  assignedTo   User?   @relation("LeadAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  convertedCustomerId String?   @unique
+  convertedCustomer   Customer? @relation(fields: [convertedCustomerId], references: [id], onDelete: SetNull)
+
+  fullName    String
+  email       String?
+  phone       String?
+  companyName String?
+  source      LeadSource @default(OTHER)
+  status      LeadStatus @default(NEW)
+  notes       String?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, assignedToId])
+  @@map("leads")
+}
+
+model Deal {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation("DealCreatedBy", fields: [createdById], references: [id])
+
+  ownerId String?
+  owner   User?   @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  title             String
+  value             Decimal   @db.Decimal(14, 2)
+  currency          String    @default("BDT")
+  stage             DealStage @default(QUALIFICATION)
+  probability       Int       @default(10)
+  expectedCloseDate DateTime?
+  closedAt          DateTime?
+  lostReason        String?
+  notes             String?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, stage])
+  @@index([organizationId, ownerId])
+  @@index([customerId])
+  @@map("deals")
 }
