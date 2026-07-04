@@ -60,7 +60,7 @@ Each layer only depends on the layer directly below it. Routes never call Prisma
 ### Installation
 
 ```powershell
-git clone <your-repo-url>
+git clone <[https://github.com/saikatkumarmondal/ai-crm](https://github.com/saikatkumarmondal/ai-crm)>
 cd ai-crm
 npm install
 ```
