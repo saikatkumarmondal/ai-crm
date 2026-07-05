@@ -2,7 +2,6 @@
 
 import { DealStage } from "@prisma/client";
 
-// প্রতিটা stage এর ডিফল্ট win-probability — hardcode না করে এখানে কেন্দ্রীভূত রাখা হলো
 export const DEAL_STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   QUALIFICATION: 10,
   NEEDS_ANALYSIS: 30,

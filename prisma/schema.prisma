@@ -57,6 +57,31 @@ enum DealStage {
   LOST
 }
 
+enum WorkflowTriggerType {
+  LEAD_CREATED
+  CUSTOMER_CREATED
+  DEAL_WON
+  DEAL_LOST
+  DEAL_STAGE_CHANGED
+  TASK_OVERDUE
+}
+
+enum WorkflowActionType {
+  ASSIGN_USER
+  SEND_EMAIL
+  NOTIFY_TEAM
+  CREATE_TASK
+  UPDATE_STATUS
+  AI_SUMMARY
+  AI_EMAIL_DRAFT
+}
+
+enum WorkflowRunStatus {
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
 model Organization {
   id        String             @id @default(cuid())
   name      String
@@ -69,6 +94,7 @@ model Organization {
   customers Customer[]
   leads     Lead[]
   deals     Deal[]
+  workflows Workflow[]
 
   @@map("organizations")
 }
@@ -93,6 +119,7 @@ model User {
   assignedLeads    Lead[]         @relation("LeadAssignedTo")
   createdDeals     Deal[]         @relation("DealCreatedBy")
   ownedDeals       Deal[]         @relation("DealOwner")
+  createdWorkflows Workflow[]
 
   @@index([organizationId])
   @@map("users")
@@ -204,4 +231,62 @@ model Deal {
   @@index([organizationId, ownerId])
   @@index([customerId])
   @@map("deals")
+}
+
+model Workflow {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  name        String
+  description String?
+  triggerType WorkflowTriggerType
+  conditions  Json?
+  isActive    Boolean @default(true)
+
+  actions WorkflowAction[]
+  runs    WorkflowRun[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, triggerType, isActive])
+  @@map("workflows")
+}
+
+model WorkflowAction {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  order      Int
+  actionType WorkflowActionType
+  config     Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workflowId])
+  @@map("workflow_actions")
+}
+
+model WorkflowRun {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  status       WorkflowRunStatus
+  triggerData  Json
+  resultLog    Json
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+
+  @@index([workflowId])
+  @@map("workflow_runs")
 }
