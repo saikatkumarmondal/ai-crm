@@ -1,5 +1,6 @@
 // src/lib/workflow/engine.ts
 
+import { Prisma } from "@prisma/client";
 import { workflowRepository } from "@/lib/repositories/workflow.repository";
 import { executeAction } from "@/lib/workflow/actionExecutor";
 import type { WorkflowTriggerType } from "@prisma/client";
@@ -75,8 +76,8 @@ export async function triggerWorkflows(
     await workflowRepository.logRun({
       workflowId: workflow.id,
       status: hasFailure ? (results.some((r) => r.success) ? "PARTIAL" : "FAILED") : "SUCCESS",
-      triggerData,
-      resultLog: results,
+      triggerData: triggerData as Prisma.InputJsonValue,
+      resultLog: results as unknown as Prisma.InputJsonValue,
     });
   }
 }

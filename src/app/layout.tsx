@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { Fraunces, Inter, JetBrains_Mono } from "next/font/google";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthHydration } from "@/components/auth/AuthHydration";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
@@ -44,9 +45,14 @@ export default function RootLayout({
         inter.variable,
         jetbrainsMono.variable
       )}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-[color:var(--color-paper)]">
+      <body
+        className="min-h-full flex flex-col bg-[color:var(--color-paper)]"
+        suppressHydrationWarning
+      >
         <QueryProvider>
+          <AuthHydration />
           {children}
           <Toaster />
         </QueryProvider>

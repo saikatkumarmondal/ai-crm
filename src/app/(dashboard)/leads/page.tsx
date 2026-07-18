@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Search, Filter, ChevronRight, Trash2 } from "lucide-react";
+import { apiFetch } from "@/lib/api/apiClient";
 
 interface Lead {
   id: string;
@@ -14,6 +15,15 @@ interface Lead {
   status: string;
   source: string;
   createdAt: string;
+}
+
+interface LeadsListResult {
+  items: Lead[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+  };
 }
 
 export default function LeadsPage() {
@@ -31,13 +41,14 @@ export default function LeadsPage() {
   });
 
   const fetchLeads = async (q?: string, status?: string) => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (q) params.append("search", q);
       if (status) params.append("status", status);
-      const res = await fetch(`/api/leads?${params}`);
-      const data = await res.json();
-      setLeads(data.data?.items || []);
+
+      const data = await apiFetch<LeadsListResult>(`/leads?${params}`);
+      setLeads(data?.items || []);
     } catch (error) {
       console.error("Failed to fetch leads", error);
     } finally {
@@ -47,27 +58,26 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads(search, statusFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/leads", {
+      await apiFetch("/leads", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setShowModal(false);
-        setFormData({
-          fullName: "",
-          email: "",
-          phone: "",
-          companyName: "",
-          source: "OTHER",
-        });
-        fetchLeads(search, statusFilter);
-      }
+
+      setShowModal(false);
+      setFormData({
+        fullName: "",
+        email: "",
+        phone: "",
+        companyName: "",
+        source: "OTHER",
+      });
+      fetchLeads(search, statusFilter);
     } catch (error) {
       console.error("Failed to create lead", error);
     }
@@ -76,7 +86,7 @@ export default function LeadsPage() {
   const handleDeleteLead = async (id: string) => {
     if (confirm("Are you sure?")) {
       try {
-        await fetch(`/api/leads/${id}`, { method: "DELETE" });
+        await apiFetch(`/leads/${id}`, { method: "DELETE" });
         fetchLeads(search, statusFilter);
       } catch (error) {
         console.error("Failed to delete lead", error);

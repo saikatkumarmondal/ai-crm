@@ -77,24 +77,30 @@ export const dealRepository = {
     });
   },
 
-  async delete(id: string, organizationId: string) {
-    return prisma.deal.deleteMany({
+  async softDelete(id: string, organizationId: string) {
+    return prisma.deal.updateMany({
       where: { id, organizationId },
+      data: { deletedAt: new Date() },
     });
   },
 
-  // Get deals by stage for pipeline view
+  // Pipeline view এর জন্য stage-wise summary
+  async pipelineSummary(organizationId: string) {
+    return prisma.deal.groupBy({
+      by: ["stage"],
+      where: { organizationId, deletedAt: null },
+      _count: { _all: true },
+      _sum: { value: true },
+    });
+  },
+
+  // Legacy method — অন্য কোথাও ব্যবহার হলে রেখে দেওয়া হলো
   async getDealsByStage(organizationId: string) {
     return prisma.deal.groupBy({
       by: ["stage"],
       where: { organizationId },
-      _count: {
-        id: true,
-      },
-      _sum: {
-        value: true,
-        probability: true,
-      },
+      _count: { id: true },
+      _sum: { value: true, probability: true },
     });
   },
 };

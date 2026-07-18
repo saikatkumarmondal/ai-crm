@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Search, ChevronRight, Trash2 } from "lucide-react";
+import { apiFetch } from "@/lib/api/apiClient";
 
 interface Customer {
   id: string;
@@ -13,6 +14,15 @@ interface Customer {
   companyName?: string;
   status: string;
   createdAt: string;
+}
+
+interface CustomersListResult {
+  items: Customer[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+  };
 }
 
 export default function CustomersPage() {
@@ -29,13 +39,13 @@ export default function CustomersPage() {
   });
 
   const fetchCustomers = async (q?: string, status?: string) => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (q) params.append("search", q);
       if (status) params.append("status", status);
-      const res = await fetch(`/api/customers?${params}`);
-      const data = await res.json();
-      setCustomers(data.data?.items || []);
+      const data = await apiFetch<CustomersListResult>(`/customers?${params}`);
+      setCustomers(data?.items || []);
     } catch (error) {
       console.error("Failed to fetch customers", error);
     } finally {
@@ -45,26 +55,25 @@ export default function CustomersPage() {
 
   useEffect(() => {
     fetchCustomers(search, statusFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/customers", {
+      await apiFetch("/customers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) {
-        setShowModal(false);
-        setFormData({
-          fullName: "",
-          email: "",
-          phone: "",
-          companyName: "",
-        });
-        fetchCustomers(search, statusFilter);
-      }
+
+      setShowModal(false);
+      setFormData({
+        fullName: "",
+        email: "",
+        phone: "",
+        companyName: "",
+      });
+      fetchCustomers(search, statusFilter);
     } catch (error) {
       console.error("Failed to create customer", error);
     }
@@ -73,7 +82,7 @@ export default function CustomersPage() {
   const handleDeleteCustomer = async (id: string) => {
     if (confirm("Are you sure?")) {
       try {
-        await fetch(`/api/customers/${id}`, { method: "DELETE" });
+        await apiFetch(`/customers/${id}`, { method: "DELETE" });
         fetchCustomers(search, statusFilter);
       } catch (error) {
         console.error("Failed to delete customer", error);

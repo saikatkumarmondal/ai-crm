@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2, Sparkles, X } from "lucide-react";
+import { apiFetch } from "@/lib/api/apiClient";
 
 interface Deal {
   id: string;
@@ -17,6 +18,29 @@ interface Deal {
   stage: string;
   probability: number;
   expectedCloseDate?: string;
+}
+
+interface DealsListResult {
+  items: Deal[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+  };
+}
+
+interface CustomerOption {
+  id: string;
+  fullName: string;
+  companyName?: string;
+}
+
+interface CustomersListResult {
+  items: CustomerOption[];
+}
+
+interface AiInsightResult {
+  insight: string;
 }
 
 const DEAL_STAGES = [
@@ -39,15 +63,25 @@ export default function DealsPage() {
     value: "",
     currency: "BDT",
   });
-  const [customers, setCustomers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+
+  // ---- AI Insights state ----
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const fetchDeals = async (q?: string) => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (q) params.append("search", q);
-      const res = await fetch(`/api/deals?${params}`);
-      const data = await res.json();
-      setDeals(data.data?.items || []);
+      // ✅ FIX: আগে limit param না থাকায় default (10) deal-ই আসতো,
+      // তাই Kanban board এ সব deal দেখা যাচ্ছিল না। এখন high limit রাখা হলো
+      // যাতে পুরো pipeline board এ দেখা যায়।
+      params.append("limit", "200");
+      const data = await apiFetch<DealsListResult>(`/deals?${params}`);
+      setDeals(data?.items || []);
     } catch (error) {
       console.error("Failed to fetch deals", error);
     } finally {
@@ -57,9 +91,8 @@ export default function DealsPage() {
 
   const fetchCustomers = async () => {
     try {
-      const res = await fetch("/api/customers?limit=100");
-      const data = await res.json();
-      setCustomers(data.data?.items || []);
+      const data = await apiFetch<CustomersListResult>("/customers?limit=100");
+      setCustomers(data?.items || []);
     } catch (error) {
       console.error("Failed to fetch customers", error);
     }
@@ -67,32 +100,32 @@ export default function DealsPage() {
 
   useEffect(() => {
     fetchDeals(search);
-    if (customers.length === 0) {
-      fetchCustomers();
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
 
   const handleCreateDeal = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/deals", {
+      await apiFetch("/deals", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
           value: parseFloat(formData.value),
         }),
       });
-      if (res.ok) {
-        setShowModal(false);
-        setFormData({
-          customerId: "",
-          title: "",
-          value: "",
-          currency: "BDT",
-        });
-        fetchDeals(search);
-      }
+
+      setShowModal(false);
+      setFormData({
+        customerId: "",
+        title: "",
+        value: "",
+        currency: "BDT",
+      });
+      fetchDeals(search);
     } catch (error) {
       console.error("Failed to create deal", error);
     }
@@ -101,11 +134,32 @@ export default function DealsPage() {
   const handleDeleteDeal = async (id: string) => {
     if (confirm("Are you sure?")) {
       try {
-        await fetch(`/api/deals/${id}`, { method: "DELETE" });
+        await apiFetch(`/deals/${id}`, { method: "DELETE" });
         fetchDeals(search);
       } catch (error) {
         console.error("Failed to delete deal", error);
       }
+    }
+  };
+
+  const handleGenerateInsights = async () => {
+    setShowAiPanel(true);
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await apiFetch<AiInsightResult>("/ai/deal-insights", {
+        method: "POST",
+      });
+      setAiInsight(result.insight);
+    } catch (error) {
+      console.error("Failed to generate AI insights", error);
+      setAiError(
+        error instanceof Error
+          ? error.message
+          : "Could not generate insights right now."
+      );
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -126,21 +180,84 @@ export default function DealsPage() {
     LOST: "bg-red-50 border-red-200",
   };
 
+  // "- point one\n- point two" কে array তে ভাঙা হচ্ছে দেখানোর জন্য
+  const insightLines =
+    aiInsight
+      ?.split("\n")
+      .map((line) => line.replace(/^[-*]\s*/, "").trim())
+      .filter(Boolean) ?? [];
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Sales Pipeline</h1>
           <p className="text-slate-600 mt-1">Track your deals through the sales pipeline</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={20} /> New Deal
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleGenerateInsights}
+            disabled={aiLoading}
+            className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-blue-600 text-white px-4 py-2 rounded-lg hover:from-violet-700 hover:to-blue-700 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Sparkles size={18} className={aiLoading ? "animate-pulse" : ""} />
+            {aiLoading ? "Analyzing..." : "AI Insights"}
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={20} /> New Deal
+          </button>
+        </div>
       </div>
+
+      {/* AI Insights Panel */}
+      {showAiPanel && (
+        <div className="relative bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-lg p-5 animate-in fade-in slide-in-from-top-2 duration-300">
+          <button
+            onClick={() => setShowAiPanel(false)}
+            className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <X size={18} />
+          </button>
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={18} className="text-violet-600" />
+            <h3 className="font-semibold text-slate-900">AI Pipeline Insights</h3>
+          </div>
+
+          {aiLoading && (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-3 bg-violet-200/60 rounded animate-pulse"
+                  style={{ width: `${90 - i * 10}%` }}
+                />
+              ))}
+            </div>
+          )}
+
+          {!aiLoading && aiError && (
+            <p className="text-sm text-red-600">{aiError}</p>
+          )}
+
+          {!aiLoading && !aiError && insightLines.length > 0 && (
+            <ul className="space-y-1.5">
+              {insightLines.map((line, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-2 text-sm text-slate-700"
+                >
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+                  {line}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Search */}
       <div>

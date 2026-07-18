@@ -61,7 +61,7 @@ export const leadRepository = {
     return { items, total };
   },
 
-  update(id: string, organizationId: string, data: Prisma.LeadUpdateInput) {
+  update(id: string, organizationId: string, data: Prisma.LeadUncheckedUpdateInput) {
     return prisma.lead.updateMany({
       where: { id, organizationId, deletedAt: null },
       data,

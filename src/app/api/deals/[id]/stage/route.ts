@@ -17,7 +17,7 @@ export const PATCH = withRole(
 
       if (!parsed.success) return errorResponse("Validation failed", 422, parsed.error.flatten());
 
-      const deal = await dealService.updateStage(id, auth.organizationId, parsed.data.stage);
+      const deal = await dealService.updateStage(id, auth.organizationId, parsed.data);
       return successResponse(deal);
     } catch (error: any) {
       if (error.status) return errorResponse(error.message, error.status);

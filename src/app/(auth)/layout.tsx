@@ -40,7 +40,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </p>
           <p className="text-[color:var(--color-hairline)] text-sm leading-relaxed">
             Pipeline tracking, AI-driven forecasts, and executive intelligence
-            built for teams who close deals, not just log them.
+            built for teamsQ who close deals, not just log them.
           </p>
         </motion.div>
 

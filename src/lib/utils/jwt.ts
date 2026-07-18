@@ -1,12 +1,12 @@
 // src/lib/utils/jwt.ts
 
-import jwt from "jsonwebtoken";
+import jwt, { type SignOptions } from "jsonwebtoken";
 import crypto from "crypto";
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET as string;
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET as string;
-const ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN ?? "15m";
-const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN ?? "7d";
+const ACCESS_EXPIRES_IN = (process.env.JWT_ACCESS_EXPIRES_IN ?? "15m") as SignOptions["expiresIn"];
+const REFRESH_EXPIRES_IN = (process.env.JWT_REFRESH_EXPIRES_IN ?? "7d") as SignOptions["expiresIn"];
 
 export interface AccessTokenPayload {
   userId: string;
@@ -36,6 +36,7 @@ export function hashToken(token: string): string {
 }
 
 export function getRefreshTokenExpiryDate(): Date {
-  const days = parseInt(REFRESH_EXPIRES_IN.replace("d", ""), 10) || 7;
+  const raw = process.env.JWT_REFRESH_EXPIRES_IN ?? "7d";
+  const days = parseInt(raw.replace("d", ""), 10) || 7;
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 }

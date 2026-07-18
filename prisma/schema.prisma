@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,6 +5,192 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Organization {
+  id        String             @id @default(cuid())
+  name      String
+  slug      String             @unique
+  status    OrganizationStatus @default(TRIAL)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  customers Customer[]
+  deals     Deal[]
+  leads     Lead[]
+  users     User[]
+  workflows Workflow[]
+
+  @@map("organizations")
+}
+
+model User {
+  id               String         @id @default(cuid())
+  organizationId   String?
+  fullName         String
+  email            String         @unique
+  passwordHash     String?
+  role             UserRole       @default(SALES_EXECUTIVE)
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  firebaseUid      String?        @unique
+  provider         AuthProvider   @default(LOCAL)
+  createdCustomers Customer[]
+  createdDeals     Deal[]         @relation("DealCreatedBy")
+  ownedDeals       Deal[]         @relation("DealOwner")
+  assignedLeads    Lead[]         @relation("LeadAssignedTo")
+  createdLeads     Lead[]         @relation("LeadCreatedBy")
+  refreshTokens    RefreshToken[]
+  organization     Organization?  @relation(fields: [organizationId], references: [id])
+  createdWorkflows Workflow[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Customer {
+  id                String         @id @default(cuid())
+  organizationId    String
+  createdById       String
+  fullName          String
+  email             String?
+  phone             String?
+  companyName       String?
+  status            CustomerStatus @default(LEAD)
+  notes             String?
+  deletedAt         DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  createdBy         User           @relation(fields: [createdById], references: [id])
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deals             Deal[]
+  convertedFromLead Lead?
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("customers")
+}
+
+model Lead {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  createdById         String
+  assignedToId        String?
+  convertedCustomerId String?      @unique
+  fullName            String
+  email               String?
+  phone               String?
+  companyName         String?
+  source              LeadSource   @default(OTHER)
+  status              LeadStatus   @default(NEW)
+  notes               String?
+  deletedAt           DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  assignedTo          User?        @relation("LeadAssignedTo", fields: [assignedToId], references: [id])
+  convertedCustomer   Customer?    @relation(fields: [convertedCustomerId], references: [id])
+  createdBy           User         @relation("LeadCreatedBy", fields: [createdById], references: [id])
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, assignedToId])
+  @@map("leads")
+}
+
+model Deal {
+  id                String       @id @default(cuid())
+  organizationId    String
+  customerId        String
+  createdById       String
+  ownerId           String?
+  title             String
+  value             Decimal      @db.Decimal(14, 2)
+  currency          String       @default("BDT")
+  stage             DealStage    @default(QUALIFICATION)
+  probability       Int          @default(10)
+  expectedCloseDate DateTime?
+  closedAt          DateTime?
+  lostReason        String?
+  notes             String?
+  deletedAt         DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  createdBy         User         @relation("DealCreatedBy", fields: [createdById], references: [id])
+  customer          Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner             User?        @relation("DealOwner", fields: [ownerId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, stage])
+  @@index([organizationId, ownerId])
+  @@index([customerId])
+  @@map("deals")
+}
+
+model Workflow {
+  id             String              @id @default(cuid())
+  organizationId String
+  createdById    String
+  name           String
+  description    String?
+  triggerType    WorkflowTriggerType
+  conditions     Json?
+  isActive       Boolean             @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  actions        WorkflowAction[]
+  runs           WorkflowRun[]
+  createdBy      User                @relation(fields: [createdById], references: [id])
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, triggerType, isActive])
+  @@map("workflows")
+}
+
+model WorkflowAction {
+  id         String             @id @default(cuid())
+  workflowId String
+  order      Int
+  actionType WorkflowActionType
+  config     Json
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  workflow   Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@map("workflow_actions")
+}
+
+model WorkflowRun {
+  id           String            @id @default(cuid())
+  workflowId   String
+  status       WorkflowRunStatus
+  triggerData  Json
+  resultLog    Json
+  errorMessage String?
+  createdAt    DateTime          @default(now())
+  workflow     Workflow          @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@map("workflow_runs")
 }
 
 enum UserRole {
@@ -82,211 +266,7 @@ enum WorkflowRunStatus {
   PARTIAL
 }
 
-model Organization {
-  id        String             @id @default(cuid())
-  name      String
-  slug      String             @unique
-  status    OrganizationStatus @default(TRIAL)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-
-  users     User[]
-  customers Customer[]
-  leads     Lead[]
-  deals     Deal[]
-  workflows Workflow[]
-
-  @@map("organizations")
-}
-
-model User {
-  id             String        @id @default(cuid())
-  organizationId String?
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-
-  fullName     String
-  email        String   @unique
-  passwordHash String
-  role         UserRole @default(SALES_EXECUTIVE)
-  isActive     Boolean  @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  refreshTokens    RefreshToken[]
-  createdCustomers Customer[]
-  createdLeads     Lead[]         @relation("LeadCreatedBy")
-  assignedLeads    Lead[]         @relation("LeadAssignedTo")
-  createdDeals     Deal[]         @relation("DealCreatedBy")
-  ownedDeals       Deal[]         @relation("DealOwner")
-  createdWorkflows Workflow[]
-
-  @@index([organizationId])
-  @@map("users")
-}
-
-model RefreshToken {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
-
-  @@index([userId])
-  @@map("refresh_tokens")
-}
-
-model Customer {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  fullName    String
-  email       String?
-  phone       String?
-  companyName String?
-  status      CustomerStatus @default(LEAD)
-  notes       String?
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  convertedFromLead Lead?
-  deals             Deal[]
-
-  @@unique([organizationId, email])
-  @@index([organizationId])
-  @@index([organizationId, status])
-  @@map("customers")
-}
-
-model Lead {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  createdById String
-  createdBy   User   @relation("LeadCreatedBy", fields: [createdById], references: [id])
-
-  assignedToId String?
-  assignedTo   User?   @relation("LeadAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-
-  convertedCustomerId String?   @unique
-  convertedCustomer   Customer? @relation(fields: [convertedCustomerId], references: [id], onDelete: SetNull)
-
-  fullName    String
-  email       String?
-  phone       String?
-  companyName String?
-  source      LeadSource @default(OTHER)
-  status      LeadStatus @default(NEW)
-  notes       String?
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([organizationId])
-  @@index([organizationId, status])
-  @@index([organizationId, assignedToId])
-  @@map("leads")
-}
-
-model Deal {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  createdById String
-  createdBy   User   @relation("DealCreatedBy", fields: [createdById], references: [id])
-
-  ownerId String?
-  owner   User?   @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-
-  title             String
-  value             Decimal   @db.Decimal(14, 2)
-  currency          String    @default("BDT")
-  stage             DealStage @default(QUALIFICATION)
-  probability       Int       @default(10)
-  expectedCloseDate DateTime?
-  closedAt          DateTime?
-  lostReason        String?
-  notes             String?
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([organizationId])
-  @@index([organizationId, stage])
-  @@index([organizationId, ownerId])
-  @@index([customerId])
-  @@map("deals")
-}
-
-model Workflow {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  name        String
-  description String?
-  triggerType WorkflowTriggerType
-  conditions  Json?
-  isActive    Boolean @default(true)
-
-  actions WorkflowAction[]
-  runs    WorkflowRun[]
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([organizationId])
-  @@index([organizationId, triggerType, isActive])
-  @@map("workflows")
-}
-
-model WorkflowAction {
-  id         String   @id @default(cuid())
-  workflowId String
-  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  order      Int
-  actionType WorkflowActionType
-  config     Json
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([workflowId])
-  @@map("workflow_actions")
-}
-
-model WorkflowRun {
-  id         String   @id @default(cuid())
-  workflowId String
-  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  status       WorkflowRunStatus
-  triggerData  Json
-  resultLog    Json
-  errorMessage String?
-
-  createdAt DateTime @default(now())
-
-  @@index([workflowId])
-  @@map("workflow_runs")
+enum AuthProvider {
+  LOCAL
+  GOOGLE
 }

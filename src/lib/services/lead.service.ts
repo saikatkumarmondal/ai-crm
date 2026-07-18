@@ -114,33 +114,33 @@ export const leadService = {
     return leadRepository.findById(id, organizationId);
   },
 
-  async convertToCustomer(id: string, organizationId: string, createdById: string) {
-    const lead = await leadRepository.findById(id, organizationId);
-    if (!lead) {
-      throw new LeadError("Lead not found", 404);
-    }
-    if (lead.status === "CONVERTED") {
-      throw new LeadError("Lead has already been converted", 409);
-    }
+async convertToCustomer(id: string, organizationId: string, createdById: string) {
+  const lead = await leadRepository.findById(id, organizationId);
+  if (!lead) {
+    throw new LeadError("Lead not found", 404);
+  }
+  if (lead.status === "CONVERTED") {
+    throw new LeadError("Lead has already been converted", 409);
+  }
 
-    return prisma.$transaction(async () => {
-      const customer = await customerRepository.createFromLead({
-        organizationId,
-        createdById,
-        fullName: lead.fullName,
-        email: lead.email,
-        phone: lead.phone,
-        companyName: lead.companyName,
-      });
-
-      await leadRepository.update(id, organizationId, {
-        status: "CONVERTED",
-        convertedCustomer: { connect: { id: customer.id } },
-      });
-
-      return customer;
+  return prisma.$transaction(async () => {
+    const customer = await customerRepository.createFromLead({
+      organizationId,
+      createdById,
+      fullName: lead.fullName,
+      email: lead.email,
+      phone: lead.phone,
+      companyName: lead.companyName,
     });
-  },
+
+    await leadRepository.update(id, organizationId, {
+      status: "CONVERTED",
+      convertedCustomerId: customer.id,
+    });
+
+    return customer;
+  });
+},
 
   async delete(id: string, organizationId: string) {
     const result = await leadRepository.softDelete(id, organizationId);

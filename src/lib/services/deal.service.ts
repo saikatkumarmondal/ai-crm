@@ -93,7 +93,7 @@ export const dealService = {
     return dealRepository.findById(id, organizationId);
   },
 
-  async updateStage(id: string, organizationId: string, input: UpdateDealStageInput) {
+ async updateStage(id: string, organizationId: string, input: UpdateDealStageInput){
     const existing = await dealRepository.findById(id, organizationId);
     if (!existing) {
       throw new DealError("Deal not found", 404);
@@ -138,12 +138,13 @@ export const dealService = {
   },
 
   async pipelineSummary(organizationId: string) {
-    const grouped = await dealRepository.pipelineSummary(organizationId);
-    return grouped.map((g) => ({
-      stage: g.stage,
-      count: g._count._all,
-      totalValue: g._sum.value ?? 0,
-    }));
+  const grouped = await dealRepository.pipelineSummary(organizationId);
+  return grouped.map((g) => ({
+    stage: g.stage,
+    count: g._count._all,
+    totalValue: g._sum.value ?? 0,
+  }));
+
   },
 };
 
