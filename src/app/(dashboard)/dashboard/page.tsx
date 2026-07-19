@@ -9,6 +9,8 @@ import {
   Activity,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api/apiClient";
 
@@ -46,10 +48,22 @@ interface DashboardStats {
   customersChange: number;
   dealsChange: number;
   winRate: number;
-  pipeline: { stage: string; count: number; percent: number }[];
 }
 
-const PIPELINE_STAGES = ["QUALIFICATION", "PROPOSAL", "NEGOTIATION", "WON"];
+interface PipelineStage {
+  stage: string;
+  label: string;
+  count: number;
+  totalValue: number;
+}
+
+interface PipelineResult {
+  pipeline: PipelineStage[];
+}
+
+interface AiPipelineInsightResult {
+  insight: string;
+}
 
 function calculatePeriodChange(items: { createdAt: string }[]): number {
   const now = Date.now();
@@ -94,14 +108,12 @@ function KpiCardSkeleton() {
   );
 }
 
-function PipelineRowSkeleton() {
+function PipelineFlowSkeleton() {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <Shimmer className="w-20 sm:w-24 h-4 rounded shrink-0" />
-      <div className="flex items-center gap-3 flex-1 justify-end">
-        <Shimmer className="w-full max-w-[8rem] h-2 rounded-full" />
-        <Shimmer className="w-5 h-3 rounded shrink-0" />
-      </div>
+    <div className="flex flex-col sm:flex-row gap-3">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Shimmer key={i} className="flex-1 h-24 rounded-lg" />
+      ))}
     </div>
   );
 }
@@ -129,16 +141,12 @@ function DashboardSkeleton() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <div className="skeleton-card bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
-          <Shimmer className="w-40 h-5 rounded mb-5" />
-          <div className="space-y-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <PipelineRowSkeleton key={i} />
-            ))}
-          </div>
-        </div>
+      <div className="skeleton-card bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
+        <Shimmer className="w-40 h-5 rounded mb-5" />
+        <PipelineFlowSkeleton />
+      </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <div className="skeleton-card bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
           <Shimmer className="w-44 h-5 rounded mb-5" />
           <div className="space-y-4">
@@ -188,6 +196,14 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [pipeline, setPipeline] = useState<PipelineStage[]>([]);
+  const [pipelineLoading, setPipelineLoading] = useState(true);
+
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -218,16 +234,6 @@ export default function DashboardPage() {
             ? Math.round((wonDeals / dealItems.length) * 100)
             : 0;
 
-        const stageCounts = PIPELINE_STAGES.map((stage) => ({
-          stage,
-          count: dealItems.filter((d) => d.stage === stage).length,
-        }));
-        const maxCount = Math.max(...stageCounts.map((s) => s.count), 1);
-        const pipeline = stageCounts.map((s) => ({
-          ...s,
-          percent: Math.round((s.count / maxCount) * 100),
-        }));
-
         setStats({
           totalLeads: leadsRes.meta?.total || 0,
           convertedLeads: convertedLeadsItems.length,
@@ -239,7 +245,6 @@ export default function DashboardPage() {
           customersChange: calculatePeriodChange(customerItems),
           dealsChange: calculatePeriodChange(dealItems),
           winRate,
-          pipeline,
         });
       } catch (err) {
         console.error("Failed to fetch dashboard stats", err);
@@ -253,8 +258,48 @@ export default function DashboardPage() {
       }
     };
 
+    const fetchPipeline = async () => {
+      try {
+        const res = await apiFetch<PipelineResult>("/deals/pipeline");
+        setPipeline(res.pipeline || []);
+      } catch (err) {
+        console.error("Failed to fetch pipeline", err);
+      } finally {
+        setPipelineLoading(false);
+      }
+    };
+
     fetchStats();
+    fetchPipeline();
   }, []);
+
+  const handleAnalyzePipeline = async () => {
+    setShowAiPanel(true);
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await apiFetch<AiPipelineInsightResult>(
+        "/ai/pipeline-insights",
+        { method: "POST" }
+      );
+      setAiInsight(result.insight);
+    } catch (err) {
+      console.error("Failed to generate pipeline insights", err);
+      setAiError(
+        err instanceof Error
+          ? err.message
+          : "Could not generate insights right now."
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const insightLines =
+    aiInsight
+      ?.split("\n")
+      .map((line) => line.replace(/^[-*]\s*/, "").trim())
+      .filter(Boolean) ?? [];
 
   if (loading) {
     return <DashboardSkeleton />;
@@ -372,39 +417,89 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {/* Pipeline Overview */}
-        <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 transition-all duration-300 hover:shadow-lg">
-          <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-3 sm:mb-4">
-            Pipeline Overview
+      {/* Visual Pipeline — Qualify → Analyze → Propose → Negotiate → Won */}
+      <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 transition-all duration-300 hover:shadow-lg">
+        <div className="flex items-center justify-between mb-4 sm:mb-6 gap-3">
+          <h3 className="text-base sm:text-lg font-semibold text-slate-900">
+            Visual Pipeline
           </h3>
-          <div className="space-y-3 sm:space-y-4">
-            {stats?.pipeline.map((s) => (
+          <button
+            onClick={handleAnalyzePipeline}
+            disabled={aiLoading}
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-violet-600 hover:text-violet-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shrink-0"
+          >
+            <Sparkles size={14} className={aiLoading ? "animate-pulse" : ""} />
+            {aiLoading ? "Analyzing..." : "Analyze with AI"}
+          </button>
+        </div>
+
+        {/* AI insight panel */}
+        {showAiPanel && (
+          <div className="relative bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-lg p-4 mb-5">
+            {aiLoading && (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-3 bg-violet-200/60 rounded animate-pulse"
+                    style={{ width: `${90 - i * 10}%` }}
+                  />
+                ))}
+              </div>
+            )}
+            {!aiLoading && aiError && (
+              <p className="text-sm text-red-600">{aiError}</p>
+            )}
+            {!aiLoading && !aiError && insightLines.length > 0 && (
+              <ul className="space-y-1.5">
+                {insightLines.map((line, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Arrow-flow diagram — responsive: column on mobile, row on desktop */}
+        {pipelineLoading ? (
+          <PipelineFlowSkeleton />
+        ) : (
+          <div className="flex flex-col sm:flex-row items-stretch gap-2 sm:gap-0">
+            {pipeline.map((stage, index) => (
               <div
-                key={s.stage}
-                className="group flex items-center justify-between gap-3 rounded-md px-2 -mx-2 py-1.5 transition-colors duration-200 hover:bg-slate-50"
+                key={stage.stage}
+                className="flex flex-col sm:flex-row items-stretch flex-1 min-w-0"
               >
-                <span className="text-sm sm:text-base text-slate-600 capitalize shrink-0 transition-colors duration-200 group-hover:text-slate-900">
-                  {s.stage.charAt(0) + s.stage.slice(1).toLowerCase()}
-                </span>
-                <div className="flex items-center gap-2 sm:gap-3 flex-1 justify-end min-w-0">
-                  <div className="w-full max-w-[5rem] sm:max-w-[8rem] h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500 ease-out group-hover:from-blue-600 group-hover:to-blue-700"
-                      style={{ width: `${s.percent}%` }}
-                    ></div>
-                  </div>
-                  <span className="text-xs text-slate-500 w-5 sm:w-6 text-right shrink-0 transition-colors duration-200 group-hover:text-slate-900 group-hover:font-semibold">
-                    {s.count}
-                  </span>
+                <div className="flex-1 min-w-0 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-lg p-3 sm:p-4 text-center transition-colors duration-200">
+                  <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
+                    {stage.label}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
+                    {stage.count}
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">
+                    ${stage.totalValue.toLocaleString()}
+                  </p>
                 </div>
+                {index < pipeline.length - 1 && (
+                  <div className="flex items-center justify-center py-1 sm:py-0 sm:px-1.5 shrink-0">
+                    <ArrowRight
+                      size={18}
+                      className="text-slate-300 rotate-90 sm:rotate-0"
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Conversion Metrics */}
+      {/* Conversion Metrics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 transition-all duration-300 hover:shadow-lg">
           <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-3 sm:mb-4">
             Conversion Metrics
