@@ -7,18 +7,31 @@ import { successResponse, errorResponse } from "@/lib/utils/apiResponse";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Body খালি/অনুপস্থিত হলেও crash না করে {} ধরে নেওয়া হচ্ছে
+    let body: unknown = {};
+    const rawText = await request.text();
+    if (rawText) {
+      try {
+        body = JSON.parse(rawText);
+      } catch {
+        return errorResponse("Invalid request body", 400);
+      }
+    }
+
     const parsed = logoutSchema.safeParse(body);
 
-    if (!parsed.success) {
-      return errorResponse("Validation failed", 422, parsed.error.flatten());
+    // refreshToken না থাকলে বা invalid হলে সার্ভার-সাইডে কিছু invalidate করার
+    // দরকার নেই — client-side এ token cleared হচ্ছেই, তাই gracefully success দিন
+    if (!parsed.success || !parsed.data.refreshToken) {
+      return successResponse({ message: "Logged out successfully" }, 200);
     }
 
     await authService.logout(parsed.data.refreshToken);
     return successResponse({ message: "Logged out successfully" }, 200);
   } catch (error) {
     if (error instanceof AuthError) {
-      return errorResponse(error.message, error.status);
+      // Auth এরর (যেমন already-invalid token) হলেও logout ব্যর্থ দেখানোর দরকার নেই
+      return successResponse({ message: "Logged out successfully" }, 200);
     }
     console.error("Logout error:", error);
     return errorResponse("Internal server error", 500);
