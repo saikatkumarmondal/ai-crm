@@ -14,31 +14,32 @@ export function GoogleLoginButton() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleGoogleLogin = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const result = await signInWithPopup(firebaseAuth, googleProvider);
-      const idToken = await result.user.getIdToken();
-
-      const data = await authApi.googleLogin(idToken);
-
-      localStorage.setItem("refreshToken", data.refreshToken);
-      setAuth(data.user, data.accessToken);
-
-      if (data.needsOnboarding) {
-        router.push("/onboarding");
-      } else {
-        router.push("/dashboard");
-      }
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google login failed");
-    } finally {
-      setLoading(false);
+const handleGoogleLogin = async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    console.log("1. Starting signInWithPopup...");
+    const result = await signInWithPopup(firebaseAuth, googleProvider);
+    console.log("2. Popup completed, got user:", result.user.email);
+    const idToken = await result.user.getIdToken();
+    console.log("3. Got idToken, calling backend...");
+    const data = await authApi.googleLogin(idToken);
+    console.log("4. Backend responded:", data);
+    localStorage.setItem("refreshToken", data.refreshToken);
+    setAuth(data.user, data.accessToken);
+    if (data.needsOnboarding) {
+      router.push("/onboarding");
+    } else {
+      router.push("/dashboard");
     }
-  };
+    router.refresh();
+  } catch (err) {
+    console.error("Google login error caught:", err);
+    setError(err instanceof Error ? err.message : "Google login failed");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div>
