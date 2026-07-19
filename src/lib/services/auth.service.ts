@@ -11,7 +11,6 @@ import {
   getRefreshTokenExpiryDate,
   verifyRefreshToken,
 } from "@/lib/utils/jwt";
-import { firebaseAdminAuth } from "@/lib/firebase/admin";
 import type {
   RegisterInput,
   LoginInput,
@@ -100,6 +99,13 @@ export const authService = {
   },
 
   async googleLogin({ idToken }: GoogleLoginInput) {
+    // Dynamic import — only loads firebase-admin (and its ESM-only
+    // dependency chain via jwks-rsa/jose) when Google login is actually
+    // used. This keeps /api/auth/register, /login, /refresh, /logout
+    // completely free of firebase-admin, avoiding the ERR_REQUIRE_ESM
+    // crash on Vercel's serverless runtime.
+    const { firebaseAdminAuth } = await import("@/lib/firebase/admin");
+
     let decoded;
 
     try {
