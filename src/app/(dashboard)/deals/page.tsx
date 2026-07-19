@@ -43,17 +43,32 @@ interface AiInsightResult {
   insight: string;
 }
 
-const DEAL_STAGES = [
-  "QUALIFICATION",
-  "NEEDS_ANALYSIS",
-  "PROPOSAL",
-  "NEGOTIATION",
-  "WON",
-  "LOST",
-];
+interface DealStageOption {
+  value: string;
+  label: string;
+}
+
+interface DealStagesResult {
+  stages: DealStageOption[];
+}
+
+const STAGE_COLORS: Record<string, string> = {
+  QUALIFICATION: "bg-blue-50 border-blue-200",
+  NEEDS_ANALYSIS: "bg-indigo-50 border-indigo-200",
+  PROPOSAL: "bg-purple-50 border-purple-200",
+  NEGOTIATION: "bg-orange-50 border-orange-200",
+  WON: "bg-green-50 border-green-200",
+  LOST: "bg-red-50 border-red-200",
+};
+
+function getStageColor(stage: string): string {
+  return STAGE_COLORS[stage] ?? "bg-slate-50 border-slate-200";
+}
 
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [stages, setStages] = useState<DealStageOption[]>([]);
+  const [stagesLoading, setStagesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -71,14 +86,23 @@ export default function DealsPage() {
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  const fetchStages = async () => {
+    setStagesLoading(true);
+    try {
+      const data = await apiFetch<DealStagesResult>("/deals/stages");
+      setStages(data?.stages || []);
+    } catch (error) {
+      console.error("Failed to fetch deal stages", error);
+    } finally {
+      setStagesLoading(false);
+    }
+  };
+
   const fetchDeals = async (q?: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (q) params.append("search", q);
-      // ✅ FIX: আগে limit param না থাকায় default (10) deal-ই আসতো,
-      // তাই Kanban board এ সব deal দেখা যাচ্ছিল না। এখন high limit রাখা হলো
-      // যাতে পুরো pipeline board এ দেখা যায়।
       params.append("limit", "200");
       const data = await apiFetch<DealsListResult>(`/deals?${params}`);
       setDeals(data?.items || []);
@@ -99,13 +123,14 @@ export default function DealsPage() {
   };
 
   useEffect(() => {
+    fetchStages();
+    fetchCustomers();
+  }, []);
+
+  useEffect(() => {
     fetchDeals(search);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
-
-  useEffect(() => {
-    fetchCustomers();
-  }, []);
 
   const handleCreateDeal = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,22 +188,13 @@ export default function DealsPage() {
     }
   };
 
-  const dealsByStage = DEAL_STAGES.reduce(
+  const dealsByStage = stages.reduce(
     (acc, stage) => {
-      acc[stage] = deals.filter((d) => d.stage === stage);
+      acc[stage.value] = deals.filter((d) => d.stage === stage.value);
       return acc;
     },
     {} as Record<string, Deal[]>
   );
-
-  const stageColors = {
-    QUALIFICATION: "bg-blue-50 border-blue-200",
-    NEEDS_ANALYSIS: "bg-indigo-50 border-indigo-200",
-    PROPOSAL: "bg-purple-50 border-purple-200",
-    NEGOTIATION: "bg-orange-50 border-orange-200",
-    WON: "bg-green-50 border-green-200",
-    LOST: "bg-red-50 border-red-200",
-  };
 
   // "- point one\n- point two" কে array তে ভাঙা হচ্ছে দেখানোর জন্য
   const insightLines =
@@ -276,81 +292,79 @@ export default function DealsPage() {
         </div>
       </div>
 
-      {/* Kanban Board */}
-      {loading ? (
+      {/* Kanban Board — responsive flex layout, columns grow/wrap on smaller screens */}
+      {loading || stagesLoading ? (
         <div className="p-8 text-center text-slate-600">Loading deals...</div>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="flex gap-6 pb-4" style={{ minWidth: "100%" }}>
-            {DEAL_STAGES.map((stage) => (
-              <div
-                key={stage}
-                className={`flex-shrink-0 w-80 rounded-lg border-2 p-4 ${
-                  stageColors[stage as keyof typeof stageColors]
-                }`}
-              >
-                <div className="mb-4">
-                  <h3 className="font-semibold text-slate-900">{stage}</h3>
-                  <p className="text-xs text-slate-600">
-                    {dealsByStage[stage].length} deal(s)
-                  </p>
-                </div>
-                <div className="space-y-3">
-                  {dealsByStage[stage].map((deal) => (
-                    <div
-                      key={deal.id}
-                      className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow border border-slate-200"
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-slate-900 truncate">
-                            {deal.title}
-                          </h4>
-                          <p className="text-xs text-slate-600 truncate">
-                            {deal.customer.fullName}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteDeal(deal.id)}
-                          className="text-red-600 hover:text-red-700 flex-shrink-0"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                      <div className="space-y-2 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-slate-600">Value:</span>
-                          <span className="font-semibold text-slate-900">
-                            {deal.currency} {deal.value.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-600">Probability:</span>
-                          <span className="font-semibold text-slate-900">
-                            {deal.probability}%
-                          </span>
-                        </div>
-                        {deal.expectedCloseDate && (
-                          <div className="flex justify-between">
-                            <span className="text-slate-600">Close Date:</span>
-                            <span className="text-slate-700">
-                              {new Date(deal.expectedCloseDate).toLocaleDateString()}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <Link
-                        href={`/deals/${deal.id}`}
-                        className="mt-3 block w-full text-center px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
-                      >
-                        View Details
-                      </Link>
-                    </div>
-                  ))}
-                </div>
+        <div className="flex flex-wrap gap-4 sm:gap-6">
+          {stages.map((stage) => (
+            <div
+              key={stage.value}
+              className={`flex-[4_1_260px] min-w-[260px] rounded-lg border-2 p-4 ${getStageColor(
+                stage.value
+              )}`}
+            >
+              <div className="mb-4">
+                <h3 className="font-semibold text-slate-900">{stage.label}</h3>
+                <p className="text-xs text-slate-600">
+                  {(dealsByStage[stage.value] || []).length} deal(s)
+                </p>
               </div>
-            ))}
-          </div>
+              <div className="space-y-3">
+                {(dealsByStage[stage.value] || []).map((deal) => (
+                  <div
+                    key={deal.id}
+                    className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow border border-slate-200"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-slate-900 truncate">
+                          {deal.title}
+                        </h4>
+                        <p className="text-xs text-slate-600 truncate">
+                          {deal.customer.fullName}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteDeal(deal.id)}
+                        className="text-red-600 hover:text-red-700 flex-shrink-0"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Value:</span>
+                        <span className="font-semibold text-slate-900">
+                          {deal.currency} {deal.value.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Probability:</span>
+                        <span className="font-semibold text-slate-900">
+                          {deal.probability}%
+                        </span>
+                      </div>
+                      {deal.expectedCloseDate && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">Close Date:</span>
+                          <span className="text-slate-700">
+                            {new Date(deal.expectedCloseDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <Link
+                      href={`/deals/${deal.id}`}
+                      className="mt-3 block w-full text-center px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
+                    >
+                      View Details
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

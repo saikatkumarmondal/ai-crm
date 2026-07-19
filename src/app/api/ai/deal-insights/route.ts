@@ -19,7 +19,7 @@ export const POST = withAuth(async (_request: NextRequest, _context, auth) => {
     if (totalDeals === 0) {
       return successResponse({
         insight:
-          "আপনার এখনো কোনো deal নেই। প্রথম deal তৈরি করলে AI আপনার pipeline নিয়ে insight দিতে পারবে।",
+          "No deals yet. Create your first deal to unlock AI-powered insights for your sales pipeline.",
       });
     }
 
