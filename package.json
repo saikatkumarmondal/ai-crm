@@ -12,6 +12,9 @@
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
+  "overrides": {
+    "jose": "4.15.9"
+  },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@google/genai": "^2.10.0",
