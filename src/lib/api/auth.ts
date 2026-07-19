@@ -23,6 +23,7 @@ type RegisterPayload = {
   email: string;
   password: string;
   organizationName: string;
+  role: string;
 };
 
 export const authApi = {
