@@ -1,9 +1,17 @@
-// src/app/api/ai/deal-insights/route.ts
+// src/app/api/ai/pipeline-insights/route.ts
 
 import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/middleware/withAuth";
 import { dealService } from "@/lib/services/deal.service";
 import { successResponse, errorResponse } from "@/lib/utils/apiResponse";
+
+const PIPELINE_STAGE_META = [
+  { value: "QUALIFICATION", label: "Qualify" },
+  { value: "NEEDS_ANALYSIS", label: "Analyze" },
+  { value: "PROPOSAL", label: "Propose" },
+  { value: "NEGOTIATION", label: "Negotiate" },
+  { value: "WON", label: "Won" },
+] as const;
 
 export const POST = withAuth(async (_request: NextRequest, _context, auth) => {
   if (!auth.organizationId) {
@@ -11,7 +19,6 @@ export const POST = withAuth(async (_request: NextRequest, _context, auth) => {
   }
 
   try {
-    // DB-level aggregated summary (stage অনুযায়ী count + total value)
     const stageSummary = await dealService.pipelineSummary(auth.organizationId);
 
     const totalDeals = stageSummary.reduce((sum, s) => sum + s.count, 0);
@@ -19,32 +26,18 @@ export const POST = withAuth(async (_request: NextRequest, _context, auth) => {
     if (totalDeals === 0) {
       return successResponse({
         insight:
-          "No deals yet. Create your first deal to unlock AI-powered insights for your sales pipeline.",
+          "No deals yet. Create your first deal to unlock AI-powered pipeline insights.",
       });
     }
 
-    // Detail context এর জন্য সাম্প্রতিক কিছু deal
-    const { items: recentDeals } = await dealService.list(
-      auth.organizationId,
-      {},
-      { skip: 0, take: 30 }
+    const summaryMap = new Map(
+      stageSummary.map((s) => [s.stage, { count: s.count, totalValue: Number(s.totalValue) }])
     );
 
-    const dealDetails = recentDeals.map((d: any) => ({
-      title: d.title,
-      stage: d.stage,
-      value: d.value,
-      currency: d.currency,
-      probability: d.probability,
-      expectedCloseDate: d.expectedCloseDate,
-    }));
-
-    // FIX: summary object
-    const summary = {
-      totalDeals,
-      stageSummary,
-      dealDetails,
-    };
+    const pipelineText = PIPELINE_STAGE_META.map((meta) => {
+      const data = summaryMap.get(meta.value) ?? { count: 0, totalValue: 0 };
+      return `${meta.label}: ${data.count} deal(s), total value ${data.totalValue}`;
+    }).join("\n");
 
     const apiKey = process.env.GEMINI_API_KEY;
     const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
@@ -53,27 +46,16 @@ export const POST = withAuth(async (_request: NextRequest, _context, auth) => {
       return errorResponse("AI insights is not configured on the server", 500);
     }
 
-    const prompt = `You are an experienced Sales Operations Analyst reviewing a CRM sales pipeline.
+    const prompt = `You are an experienced Sales Operations Analyst reviewing a CRM sales pipeline funnel (Qualify → Analyze → Propose → Negotiate → Won).
 
-Analyze the following CRM pipeline summary (JSON):
+Current pipeline stage breakdown:
+${pipelineText}
 
-${JSON.stringify(summary, null, 2)}
-
-Provide a concise executive summary as exactly 4–6 bullet points. Begin every bullet with "-".
-
-Your analysis should include:
-1. Overall pipeline health, including total pipeline value, number of deals, and general performance.
-2. Bottlenecks, stalled stages, or unusual pipeline distribution that may impact revenue.
-3. High-priority deals requiring immediate attention (e.g., high-value, aging, low-probability, or overdue opportunities).
-4. Notable risks or trends affecting pipeline quality or forecast accuracy.
-5. One clear, practical, and actionable recommendation to improve pipeline performance.
+Provide 3-4 short, actionable bullet points (each under 20 words) about bottlenecks, risks, or opportunities in this pipeline.
 
 Guidelines:
-- Keep the entire response under 150 words.
-- Be data-driven and reference the provided information only.
-- Prioritize business impact over description.
-- Do not invent or assume missing data.
-- Do not repeat metrics unnecessarily.
+- Begin every bullet with "-".
+- Be data-driven and reference only the provided information.
 - No markdown headings, tables, or bold formatting.
 - Output only the bullet points.`;
 
@@ -112,9 +94,8 @@ Guidelines:
 
     return successResponse({ insight });
   } catch (error: any) {
-    console.error("Deal insights error:", error);
+    console.error("Pipeline AI insights error:", error);
 
-    // Prisma connection pool timeout হলে user কে বুঝিয়ে বলা
     if (error?.code === "P2024") {
       return errorResponse(
         "Database is busy right now. Please wait a few seconds and try again.",
