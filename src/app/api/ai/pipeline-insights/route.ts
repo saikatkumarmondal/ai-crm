@@ -1,14 +1,9 @@
 // src/app/api/ai/pipeline-insights/route.ts
 
-import { GoogleGenAI } from "@google/genai";
+import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/middleware/withAuth";
 import { dealService } from "@/lib/services/deal.service";
 import { successResponse, errorResponse } from "@/lib/utils/apiResponse";
-
-// ⚠️ অনুমান: env variable নাম "GEMINI_API_KEY" এবং model "gemini-2.5-flash"।
-// আপনার বিদ্যমান /api/ai/deal-insights route শেয়ার করলে এই দুটো
-// ঠিকমতো মিলিয়ে দেব।
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const PIPELINE_STAGE_META = [
   { value: "QUALIFICATION", label: "Qualify" },
@@ -18,15 +13,25 @@ const PIPELINE_STAGE_META = [
   { value: "WON", label: "Won" },
 ] as const;
 
-export const POST = withAuth(async (_request, _context, auth) => {
+export const POST = withAuth(async (_request: NextRequest, _context, auth) => {
+  if (!auth.organizationId) {
+    return errorResponse("No organization associated with this user", 400);
+  }
+
   try {
-    if (!auth.organizationId) {
-      return errorResponse("No organization associated with this user", 400);
+    const stageSummary = await dealService.pipelineSummary(auth.organizationId);
+
+    const totalDeals = stageSummary.reduce((sum, s) => sum + s.count, 0);
+
+    if (totalDeals === 0) {
+      return successResponse({
+        insight:
+          "No deals yet. Create your first deal to unlock AI-powered pipeline insights.",
+      });
     }
 
-    const summary = await dealService.pipelineSummary(auth.organizationId);
     const summaryMap = new Map(
-      summary.map((s) => [s.stage, { count: s.count, totalValue: Number(s.totalValue) }])
+      stageSummary.map((s) => [s.stage, { count: s.count, totalValue: Number(s.totalValue) }])
     );
 
     const pipelineText = PIPELINE_STAGE_META.map((meta) => {
@@ -34,22 +39,70 @@ export const POST = withAuth(async (_request, _context, auth) => {
       return `${meta.label}: ${data.count} deal(s), total value ${data.totalValue}`;
     }).join("\n");
 
-    const prompt = `You are a sales pipeline analyst. Here is the current deal pipeline for this organization:
+    const apiKey = process.env.GEMINI_API_KEY;
+    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
+    if (!apiKey) {
+      return errorResponse("AI insights is not configured on the server", 500);
+    }
+
+    const prompt = `You are an experienced Sales Operations Analyst reviewing a CRM sales pipeline funnel (Qualify → Analyze → Propose → Negotiate → Won).
+
+Current pipeline stage breakdown:
 ${pipelineText}
 
-Give 3-4 short, actionable bullet points (each under 20 words) about bottlenecks, risks, or opportunities in this pipeline. Format as a plain list, one point per line, starting each with "- ".`;
+Provide 3-4 short, actionable bullet points (each under 20 words) about bottlenecks, risks, or opportunities in this pipeline.
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-    });
+Guidelines:
+- Begin every bullet with "-".
+- Be data-driven and reference only the provided information.
+- No markdown headings, tables, or bold formatting.
+- Output only the bullet points.`;
 
-    const insight = response.text ?? "No insight generated.";
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error("Gemini API error:", errText);
+      return errorResponse("Failed to generate AI insights", 502);
+    }
+
+    const geminiJson = await geminiRes.json();
+
+    const insight: string =
+      geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text ??
+      "AI could not generate insights right now. Please try again.";
 
     return successResponse({ insight });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Pipeline AI insights error:", error);
-    return errorResponse("Could not generate pipeline insights right now.", 500);
+
+    if (error?.code === "P2024") {
+      return errorResponse(
+        "Database is busy right now. Please wait a few seconds and try again.",
+        503
+      );
+    }
+
+    return errorResponse("Internal server error", 500);
   }
 });
